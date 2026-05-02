@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>山海经 Roguelike</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script>
+const gameConfig = {
+    width: 1024,
+    height: 768,
+    tileSize: 32,
+    mapWidth: 30,
+    mapHeight: 20,
+    player: {
+        baseHealth: 100,
+        baseStamina: 100,
+        baseAttack: 10,
+        baseDefense: 5,
+        baseMoveSpeed: 150,
+        staminaPerMove: 2,
+        staminaRegenRate: 0.5,
+        explorationStaminaCost: 5
+    },
+    combat: {
+        baseDamageMultiplier: 1.0,
+        criticalChance: 0.1,
+        criticalMultiplier: 1.5
+    },
+    exploration: {
+        revealRadius: 3
+    },
+    items: {
+        maxInventory: 20
+    },
+    gods: {
+        baseOfferingCost: 10,
+        blessingMultiplier: 1.2
+    }
+};
+
+const monsters = [
+    { id: 'qingniao', name: '青鸟', description: '西王母的使者，形如凤凰，羽毛呈青色', origin: '山海经·西山经', baseHealth: 30, baseAttack: 8, baseDefense: 3, moveSpeed: 180, expReward: 15, drops: ['feather', 'incense'] },
+    { id: 'taotie', name: '饕餮', description: '羊身人面，眼在腋下，虎齿人手，贪吃无厌', origin: '山海经·北山经', baseHealth: 80, baseAttack: 15, baseDefense: 8, moveSpeed: 100, expReward: 40, drops: ['gold', 'incense', 'armor'] },
+    { id: 'jiutou', name: '九头蛇', description: '相柳，共工之臣，九首人面，蛇身而青', origin: '山海经·海外北经', baseHealth: 100, baseAttack: 12, baseDefense: 6, moveSpeed: 120, expReward: 50, drops: ['scale', 'incense', 'weapon'] },
+    { id: 'qiongqi', name: '穷奇', description: '状如虎，有翼，食人从首始，所食被发', origin: '山海经·西山经', baseHealth: 120, baseAttack: 18, baseDefense: 10, moveSpeed: 140, expReward: 60, drops: ['wing', 'incense', 'armor'] },
+    { id: 'wuzhiqi', name: '无支祁', description: '形若猿猴，缩鼻高额，青躯白首，金目雪牙', origin: '山海经', baseHealth: 150, baseAttack: 20, baseDefense: 12, moveSpeed: 160, expReward: 80, drops: ['crystal', 'incense', 'weapon'] },
+    { id: 'chiyou', name: '蚩尤', description: '人身牛蹄，四目六手，耳鬓如剑戟，头有角', origin: '山海经·大荒北经', baseHealth: 200, baseAttack: 25, baseDefense: 15, moveSpeed: 130, expReward: 100, drops: ['horn', 'incense', 'weapon', 'armor'] },
+    { id: 'zhurong', name: '祝融', description: '兽身人面，乘两龙，火神也', origin: '山海经·海外南经', baseHealth: 180, baseAttack: 22, baseDefense: 10, moveSpeed: 150, expReward: 90, drops: ['fire_essence', 'incense', 'weapon'] },
+    { id: 'xingtian', name: '刑天', description: '操干戚以舞，形天与帝至此争神，帝断其首', origin: '山海经·海外西经', baseHealth: 160, baseAttack: 23, baseDefense: 14, moveSpeed: 110, expReward: 85, drops: ['axe_head', 'incense', 'armor'] },
+    { id: 'jiangshi', name: '僵尸', description: '死后化为的不死生物，行动僵硬，吸食活物精气', origin: '中国神话', baseHealth: 50, baseAttack: 10, baseDefense: 5, moveSpeed: 80, expReward: 25, drops: ['rotten_flesh', 'incense'] },
+    { id: 'mogu', name: '魔骨', description: '远古神魔遗骸所化，坚硬无比，蕴含魔气', origin: '中国神话', baseHealth: 70, baseAttack: 12, baseDefense: 12, moveSpeed: 90, expReward: 35, drops: ['bone_shard', 'incense', 'armor'] },
+    { id: 'huoli', name: '火狸', description: '修炼成精的狐狸，能操控火焰，狡猾无比', origin: '中国神话', baseHealth: 45, baseAttack: 14, baseDefense: 4, moveSpeed: 170, expReward: 30, drops: ['fox_fur', 'incense'] },
+    { id: 'shijing', name: '石精', description: '山中灵石日久成精，力大无穷，防御极高', origin: '中国神话', baseHealth: 90, baseAttack: 11, baseDefense: 18, moveSpeed: 70, expReward: 45, drops: ['stone_heart', 'incense', 'armor'] }
+];
+
+const gods = [
+    { id: 'huangdi', name: '黄帝', title: '中央天帝', description: '轩辕氏，中华民族的始祖，统一华夏部落，发明舟车、音律、医学', origin: '史记·五帝本纪', offeringBase: 15, blessing: { type: 'combat', name: '轩辕庇护', description: '攻击力提升15%', effect: { attackBonus: 0.15 } }, unlocked: false },
+    { id: 'yandi', name: '炎帝', title: '神农氏', description: '尝百草，发明医药，教民耕种，农业和医药的始祖', origin: '史记·五帝本纪', offeringBase: 15, blessing: { type: 'survival', name: '神农恩泽', description: '生命值上限提升20%', effect: { healthBonus: 0.2 } }, unlocked: false },
+    { id: 'chi_you', name: '蚩尤', title: '兵主战神', description: '九黎部落酋长，发明金属冶炼和兵器制作，被尊为战神', origin: '山海经·大荒北经', offeringBase: 20, blessing: { type: 'combat', name: '兵主之威', description: '暴击伤害提升50%', effect: { critMultiplier: 0.5 } }, unlocked: false },
+    { id: 'xiwangmu', name: '西王母', title: '瑶池金母', description: '掌管不死药的女神，居住在昆仑山，豹尾虎齿而善啸', origin: '山海经·西山经', offeringBase: 25, blessing: { type: 'survival', name: '瑶池甘露', description: '体力恢复速度提升30%', effect: { staminaRegenBonus: 0.3 } }, unlocked: false },
+    { id: 'donghuang', name: '东皇太一', title: '至高天帝', description: '楚地信仰的最高神祇，主宰星辰与万物，居于天界', origin: '楚辞·九歌', offeringBase: 30, blessing: { type: 'global', name: '东皇庇佑', description: '全属性提升10%', effect: { allStatsBonus: 0.1 } }, unlocked: false },
+    { id: 'fuxi', name: '伏羲', title: '人文始祖', description: '发明八卦，创造文字，教民渔猎，与女娲共同创世', origin: '周易·系辞', offeringBase: 25, blessing: { type: 'exploration', name: '八卦指引', description: '探索消耗体力减少20%', effect: { explorationCostReduction: 0.2 } }, unlocked: false },
+    { id: 'nvwa', name: '女娲', title: '创世女神', description: '抟土造人，炼石补天，创造人类，拯救世界', origin: '淮南子·览冥训', offeringBase: 30, blessing: { type: 'survival', name: '女娲护佑', description: '受到致命伤害时保留1点生命（每场战斗一次）', effect: { survivalInstinct: true } }, unlocked: false },
+    { id: 'zhurong_god', name: '祝融', title: '火神', description: '颛顼之孙，重黎氏，发明用火，被尊为火神', origin: '山海经·海外南经', offeringBase: 20, blessing: { type: 'combat', name: '烈焰加持', description: '攻击附加火焰伤害', effect: { fireDamage: 5 } }, unlocked: false },
+    { id: 'gonggong', name: '共工', title: '水神', description: '炎帝后裔，掌控洪水，与颛顼争夺帝位，怒触不周山', origin: '山海经·大荒西经', offeringBase: 20, blessing: { type: 'defense', name: '水神护体', description: '受到伤害时有20%几率减免50%', effect: { damageReductionChance: 0.2 } }, unlocked: false },
+    { id: 'houyi', name: '后羿', title: '射日英雄', description: '射下九日，诛杀猛兽，拯救万民，嫦娥之夫', origin: '淮南子·本经训', offeringBase: 25, blessing: { type: 'combat', name: '神射精准', description: '暴击率提升15%', effect: { critChanceBonus: 0.15 } }, unlocked: false },
+    { id: 'change', name: '嫦娥', title: '月中仙子', description: '后羿之妻，偷吃不死药，奔入月宫，居住在广寒宫', origin: '淮南子·览冥训', offeringBase: 20, blessing: { type: 'exploration', name: '月华照耀', description: '视野范围+2', effect: { visionBonus: 2 } }, unlocked: false },
+    { id: 'leishen', name: '雷神', title: '雷泽之神', description: '龙身而人头，鼓其腹则雷，掌管雷霆', origin: '山海经·海内东经', offeringBase: 20, blessing: { type: 'combat', name: '雷霆一击', description: '攻击有10%几率造成双倍伤害', effect: { doubleStrikeChance: 0.1 } }, unlocked: false }
+];
+
+const items = {
+    weapons: [
+        { id: 'stone_blade', name: '石刃', description: '粗糙的石制武器，是原始人类的最早武器', type: 'weapon', rarity: 'common', stats: { attack: 3 }, value: 10 },
+        { id: 'bronze_sword', name: '青铜剑', description: '青铜铸造的剑，锋利但易断', type: 'weapon', rarity: 'uncommon', stats: { attack: 8 }, value: 30 },
+        { id: 'iron_sword', name: '铁剑', description: '铁铸造的剑，比青铜剑更坚固', type: 'weapon', rarity: 'uncommon', stats: { attack: 12 }, value: 50 },
+        { id: 'jade_blade', name: '玉刃', description: '玉石雕刻的武器，蕴含神秘力量', type: 'weapon', rarity: 'rare', stats: { attack: 18, attackSpeed: 0.1 }, value: 100 },
+        { id: 'dragon_sword', name: '龙剑', description: '传说中由龙鳞打造的神剑', type: 'weapon', rarity: 'epic', stats: { attack: 30, critChance: 0.1 }, value: 300 },
+        { id: 'chiyou_axe', name: '蚩尤斧', description: '蚩尤曾使用的战斧，蕴含战神之力', type: 'weapon', rarity: 'legendary', stats: { attack: 45, critDamage: 0.3 }, value: 500 }
+    ],
+    armors: [
+        { id: 'cloth_armor', name: '布甲', description: '普通布料制成的护甲，聊胜于无', type: 'armor', rarity: 'common', stats: { defense: 2 }, value: 8 },
+        { id: 'leather_armor', name: '皮甲', description: '兽皮制成的护甲，提供基本防护', type: 'armor', rarity: 'common', stats: { defense: 5 }, value: 20 },
+        { id: 'bronze_armor', name: '青铜甲', description: '青铜片制成的护甲，较重但防护良好', type: 'armor', rarity: 'uncommon', stats: { defense: 10, moveSpeed: -10 }, value: 40 },
+        { id: 'iron_armor', name: '铁甲', description: '铁制铠甲，防护优秀但影响移动', type: 'armor', rarity: 'uncommon', stats: { defense: 15, moveSpeed: -15 }, value: 60 },
+        { id: 'silk_robe', name: '丝袍', description: '丝绸制成的法袍，轻便且有神秘加成', type: 'armor', rarity: 'rare', stats: { defense: 8, staminaRegen: 0.1 }, value: 80 },
+        { id: 'dragon_scale', name: '龙鳞甲', description: '由龙鳞编织而成，坚不可摧', type: 'armor', rarity: 'epic', stats: { defense: 25, health: 30 }, value: 250 }
+    ],
+    consumables: [
+        { id: 'herb', name: '草药', description: '普通草药，可恢复少量生命', type: 'consumable', rarity: 'common', effect: { heal: 20 }, value: 5 },
+        { id: 'health_potion', name: '生命药剂', description: '恢复生命值的药剂', type: 'consumable', rarity: 'common', effect: { heal: 50 }, value: 15 },
+        { id: 'stamina_potion', name: '体力药剂', description: '恢复体力的药剂', type: 'consumable', rarity: 'common', effect: { restoreStamina: 30 }, value: 10 },
+        { id: 'ginseng', name: '人参', description: '千年人参，大补元气', type: 'consumable', rarity: 'rare', effect: { heal: 80, restoreStamina: 50 }, value: 50 },
+        { id: 'elixir', name: '仙丹', description: '道士炼制的仙丹，效果神奇', type: 'consumable', rarity: 'epic', effect: { fullRestore: true }, value: 150 }
+    ]
+};
+
+class GameState {
+    constructor() { this.reset(); }
+    reset() {
+        this.player = { x: 0, y: 0, health: 100, maxHealth: 100, stamina: 100, maxStamina: 100, attack: 10, defense: 5, moveSpeed: 150, level: 1, exp: 0, expToNext: 50, gold: 0, incense: 10 };
+        this.equipment = { weapon: null, armor: null };
+        this.inventory = [];
+        this.unlockedGods = [];
+        this.activeBlessings = [];
+        this.currentMap = null;
+        this.exploredTiles = new Set();
+        this.discoveredEntities = [];
+        this.gameStats = { monstersKilled: 0, chestsOpened: 0, tilesExplored: 0, godsWorshipped: 0, currentFloor: 1, timePlayed: 0 };
+    }
+    getEffectiveStats() {
+        let s = { health: this.player.maxHealth, stamina: this.player.maxStamina, attack: this.player.attack, defense: this.player.defense, moveSpeed: this.player.moveSpeed, staminaRegen: 0.5, critChance: 0.1, critDamage: 1.5, explorationCost: 5 };
+        if (this.equipment.weapon) { const w = this.equipment.weapon; s.attack += w.stats.attack || 0; if (w.stats.critChance) s.critChance += w.stats.critChance; if (w.stats.critDamage) s.critDamage += w.stats.critDamage; }
+        if (this.equipment.armor) { const a = this.equipment.armor; s.defense += a.stats.defense || 0; if (a.stats.health) s.health += a.stats.health; if (a.stats.staminaRegen) s.staminaRegen += a.stats.staminaRegen; }
+        for (const b of this.activeBlessings) { const e = b.effect; if (e.attackBonus) s.attack *= (1 + e.attackBonus); if (e.healthBonus) s.health *= (1 + e.healthBonus); if (e.staminaRegenBonus) s.staminaRegen *= (1 + e.staminaRegenBonus); if (e.explorationCostReduction) s.explorationCost *= (1 - e.explorationCostReduction); if (e.allStatsBonus) { s.attack *= (1 + e.allStatsBonus); s.defense *= (1 + e.allStatsBonus); } if (e.critMultiplier) s.critDamage += e.critMultiplier; if (e.critChanceBonus) s.critChance += e.critChanceBonus; }
+        return s;
+    }
+    addExperience(amount) {
+        this.player.exp += amount;
+        while (this.player.exp >= this.player.expToNext) {
+            this.player.exp -= this.player.expToNext;
+            this.player.level++;
+            this.player.expToNext = Math.floor(this.player.expToNext * 1.5);
+            this.player.maxHealth += 10; this.player.health = this.player.maxHealth;
+            this.player.maxStamina += 5; this.player.stamina = this.player.maxStamina;
+            this.player.attack += 2; this.player.defense += 1;
+        }
+    }
+    addItem(item) { if (this.inventory.length >= 20) return false; this.inventory.push({...item, count: 1}); return true; }
+    removeItem(itemId) { const idx = this.inventory.findIndex(i => i.id === itemId); if (idx !== -1) { this.inventory.splice(idx, 1); return true; } return false; }
+    equipItem(item) {
+        if (item.type === 'weapon') { if (this.equipment.weapon) this.addItem(this.equipment.weapon); this.equipment.weapon = item; this.removeItem(item.id); }
+        else if (item.type === 'armor') { if (this.equipment.armor) this.addItem(this.equipment.armor); this.equipment.armor = item; this.removeItem(item.id); }
+    }
+    useConsumable(item) {
+        if (item.type !== 'consumable') return false;
+        const e = item.effect;
+        if (e.heal) this.player.health = Math.min(this.player.maxHealth, this.player.health + e.heal);
+        if (e.restoreStamina) this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + e.restoreStamina);
+        if (e.fullRestore) { this.player.health = this.player.maxHealth; this.player.stamina = this.player.maxStamina; }
+        this.removeItem(item.id); return true;
+    }
+    unlockGod(id) { if (!this.unlockedGods.includes(id)) this.unlockedGods.push(id); }
+    activateBlessing(b) { if (!this.activeBlessings.find(x => x.name === b.name)) this.activeBlessings.push(b); }
+    hasBlessing(name) { return this.activeBlessings.some(b => b.name === name); }
+}
+
+const gameState = new GameState();
+
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function choose(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function getRandomMonster(level = 1) {
+    const suitable = monsters.filter(m => Math.floor(m.expReward / 20) <= level + 2);
+    if (suitable.length === 0) return monsters[0];
+    const weights = suitable.map(m => Math.max(1, 10 - Math.abs(Math.floor(m.expReward / 20) - level) * 2));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < suitable.length; i++) { r -= weights[i]; if (r <= 0) return suitable[i]; }
+    return suitable[0];
+}
+
+function getRandomChest(level = 1) {
+    const weights = level <= 3 ? [0.6, 0.3, 0.1, 0] : level <= 5 ? [0.3, 0.4, 0.25, 0.05] : [0.1, 0.3, 0.4, 0.2];
+    const chests = [
+        { name: '木箱', loot: { items: ['herb', 'health_potion', 'stamina_potion'], gold: [5, 15] } },
+        { name: '铁箱', loot: { items: ['health_potion', 'ginseng', 'bronze_sword', 'leather_armor'], gold: [15, 40] } },
+        { name: '金箱', loot: { items: ['jade_blade', 'silk_robe', 'ginseng', 'elixir'], gold: [40, 100] } },
+        { name: '传说宝箱', loot: { items: ['dragon_sword', 'dragon_scale', 'chiyou_axe', 'elixir'], gold: [100, 300] } }
+    ];
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < chests.length; i++) { r -= weights[i]; if (r <= 0) return chests[i]; }
+    return chests[0];
+}
+
+function getRandomItem(floor) {
+    const common = ['health_potion', 'stamina_potion', 'herb'];
+    const uncommon = floor > 1 ? ['bronze_sword', 'iron_sword', 'leather_armor'] : [];
+    const rare = floor > 3 ? ['jade_blade', 'silk_robe', 'ginseng'] : [];
+    const all = [...common, ...uncommon, ...rare];
+    return { id: choose(all), name: choose(all), type: 'item' };
+}
+
+class TitleScene extends Phaser.Scene {
+    constructor() { super({ key: 'TitleScene' }); }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.text(w / 2, h / 4, '山海经 ROGUELIKE', { fontSize: '48px', fill: '#ffd700', fontStyle: 'bold' }).setOrigin(0.5);
+        this.add.text(w / 2, h / 3, '混沌初开，探索未知', { fontSize: '24px', fill: '#888888' }).setOrigin(0.5);
+        const startBtn = this.add.text(w / 2, h / 2, '开始游戏', { fontSize: '32px', fill: '#ffffff', backgroundColor: '#4a4a6a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        startBtn.on('pointerover', () => startBtn.setStyle({ fill: '#ffd700', backgroundColor: '#5a5a7a' }));
+        startBtn.on('pointerout', () => startBtn.setStyle({ fill: '#ffffff', backgroundColor: '#4a4a6a' }));
+        startBtn.on('pointerdown', () => { gameState.reset(); this.scene.start('GameScene'); });
+        this.add.text(w / 2, h - 60, '操作说明：', { fontSize: '16px', fill: '#888888' }).setOrigin(0.5);
+        this.add.text(w / 2, h - 40, 'WASD/方向键 - 移动 | 空格键 - 交互', { fontSize: '14px', fill: '#666666' }).setOrigin(0.5);
+        this.add.text(w / 2, h - 20, 'I - 物品栏 | G - 神明图鉴', { fontSize: '14px', fill: '#666666' }).setOrigin(0.5);
+    }
+}
+
+class GameScene extends Phaser.Scene {
+    constructor() { super({ key: 'GameScene' }); }
+    create() {
+        this.tileSize = gameConfig.tileSize;
+        this.mapWidth = gameConfig.mapWidth;
+        this.mapHeight = gameConfig.mapHeight;
+        this.createMap();
+        this.createPlayer();
+        this.createMapEntities();
+        this.setupCamera();
+        this.setupInput();
+        this.createUI();
+        this.revealArea(this.playerX, this.playerY);
+    }
+    createMap() {
+        this.map = []; this.explored = []; this.revealed = [];
+        for (let y = 0; y < this.mapHeight; y++) {
+            this.map[y] = []; this.explored[y] = []; this.revealed[y] = [];
+            for (let x = 0; x < this.mapWidth; x++) {
+                const r = Math.random();
+                this.map[y][x] = r < 0.7 ? 'grass' : r < 0.85 ? 'dirt' : 'stone';
+                this.explored[y][x] = false; this.revealed[y][x] = false;
+            }
+        }
+        this.tileImages = [];
+        for (let y = 0; y < this.mapHeight; y++) {
+            for (let x = 0; x < this.mapWidth; x++) {
+                let color;
+                if (this.map[y][x] === 'grass') color = Math.random() > 0.5 ? 0x2d5a27 : 0x4a6741;
+                else if (this.map[y][x] === 'dirt') color = 0x8b7355;
+                else color = 0x696969;
+                const tile = this.add.rectangle(x * this.tileSize + this.tileSize / 2, y * this.tileSize + this.tileSize / 2, this.tileSize - 2, this.tileSize - 2, color);
+                tile.setOrigin(0.5); tile.setVisible(false);
+                this.tileImages.push(tile);
+            }
+        }
+        this.fogTiles = [];
+        for (let y = 0; y < this.mapHeight; y++) {
+            for (let x = 0; x < this.mapWidth; x++) {
+                const fog = this.add.rectangle(x * this.tileSize + this.tileSize / 2, y * this.tileSize + this.tileSize / 2, this.tileSize - 2, this.tileSize - 2, 0x1a1a1a);
+                fog.setOrigin(0.5);
+                this.fogTiles.push({ tile: fog, x, y });
+            }
+        }
+    }
+    createPlayer() {
+        this.playerX = Math.floor(this.mapWidth / 2);
+        this.playerY = Math.floor(this.mapHeight / 2);
+        gameState.player.x = this.playerX;
+        gameState.player.y = this.playerY;
+        this.player = this.add.rectangle(this.playerX * this.tileSize + this.tileSize / 2, this.playerY * this.tileSize + this.tileSize / 2, this.tileSize - 8, this.tileSize - 8, 0x00ff00);
+        this.player.setOrigin(0.5);
+        this.player.setDepth(10);
+        this.playerSpeed = gameState.getEffectiveStats().moveSpeed;
+        this.isMoving = false;
+    }
+    createMapEntities() {
+        this.entities = []; this.entityMap = [];
+        for (let y = 0; y < this.mapHeight; y++) { this.entityMap[y] = []; for (let x = 0; x < this.mapWidth; x++) this.entityMap[y][x] = null; }
+        const floor = gameState.gameStats.currentFloor;
+        const count = rand(15 + floor * 2, 25 + floor * 3);
+        for (let i = 0; i < count; i++) {
+            let x, y, attempts = 0;
+            do { x = rand(0, this.mapWidth - 1); y = rand(0, this.mapHeight - 1); attempts++; } while ((Math.abs(x - this.playerX) < 3 && Math.abs(y - this.playerY) < 3) || this.entityMap[y][x] !== null && attempts < 50);
+            if (attempts >= 50) continue;
+            const type = this.getRandomEntityType();
+            const entity = this.createEntity(x, y, type);
+            if (entity) { this.entities.push(entity); this.entityMap[y][x] = entity; }
+        }
+    }
+    getRandomEntityType() {
+        const r = Math.random();
+        if (r < 0.4) return 'monster';
+        if (r < 0.65) return 'chest';
+        if (r < 0.8) return 'item';
+        if (r < 0.9) return 'supply';
+        return 'temple';
+    }
+    createEntity(x, y, type) {
+        let entity = { x, y };
+        const floor = gameState.gameStats.currentFloor;
+        switch (type) {
+            case 'monster': const m = getRandomMonster(floor); entity.type = 'monster'; entity.data = m; entity.sprite = this.add.rectangle(x * this.tileSize + 16, y * this.tileSize + 16, 24, 24, 0xff0000); break;
+            case 'chest': const c = getRandomChest(floor); entity.type = 'chest'; entity.data = c; entity.sprite = this.add.rectangle(x * this.tileSize + 16, y * this.tileSize + 16, 24, 24, 0xffd700); break;
+            case 'item': entity.type = 'item'; entity.data = getRandomItem(floor); entity.sprite = this.add.rectangle(x * this.tileSize + 16, y * this.tileSize + 16, 20, 20, 0x00ffff); break;
+            case 'supply': entity.type = 'supply'; entity.data = { name: '补给点', heal: rand(20, 50), restoreStamina: rand(15, 30) }; entity.sprite = this.add.rectangle(x * this.tileSize + 16, y * this.tileSize + 16, 20, 20, 0xff69b4); break;
+            case 'temple': const g = choose(gods.filter(god => !gameState.unlockedGods.includes(god.id))); entity.type = 'temple'; entity.data = g || choose(gods); entity.sprite = this.add.rectangle(x * this.tileSize + 16, y * this.tileSize + 16, 28, 28, 0x8b4513); break;
+        }
+        entity.sprite.setOrigin(0.5); entity.sprite.setDepth(5); entity.sprite.setVisible(false);
+        return entity;
+    }
+    setupCamera() { this.cameras.main.setBounds(0, 0, this.mapWidth * this.tileSize, this.mapHeight * this.tileSize); this.cameras.main.startFollow(this.player, true); this.cameras.main.setZoom(1.2); }
+    setupInput() {
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.wasd = { up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W), down: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S), left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A), right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D) };
+        this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.iKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+        this.gKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+        this.spaceKey.on('down', () => this.interact());
+        this.iKey.on('down', () => { this.scene.pause(); this.scene.launch('InventoryScene'); });
+        this.gKey.on('down', () => { this.scene.pause(); this.scene.launch('GodsScene'); });
+        this.moveDelay = 0;
+    }
+    createUI() {
+        const ui = this.add.container(0, 0);
+        ui.setDepth(100);
+        const panel = this.add.rectangle(20, 20, 250, 100, 0x1a1a2e, 0.9);
+        panel.setOrigin(0); panel.setStrokeStyle(2, 0x4a4a6a);
+        ui.add(panel);
+        this.healthText = this.add.text(30, 30, '', { fontSize: '14px', fill: '#ff6666' });
+        ui.add(this.healthText);
+        this.staminaText = this.add.text(30, 55, '', { fontSize: '14px', fill: '#66ccff' });
+        ui.add(this.staminaText);
+        this.statsText = this.add.text(30, 80, '', { fontSize: '12px', fill: '#ffd700' });
+        ui.add(this.statsText);
+        this.updateUI();
+    }
+    updateUI() { const s = gameState.getEffectiveStats(); this.healthText.setText(`生命: ${Math.floor(gameState.player.health)}/${Math.floor(s.health)}`); this.staminaText.setText(`体力: ${Math.floor(gameState.player.stamina)}/${Math.floor(s.stamina)}`); this.statsText.setText(`等级: ${gameState.player.level} | 金币: ${gameState.player.gold} | 香火: ${gameState.player.incense}`); }
+    update(time, delta) {
+        if (this.isMoving || this.scene.isPaused()) return;
+        const s = gameState.getEffectiveStats();
+        gameState.player.stamina = Math.min(gameState.player.maxStamina, gameState.player.stamina + s.staminaRegen * delta / 1000);
+        this.moveDelay -= delta;
+        if (this.moveDelay <= 0) {
+            let dx = 0, dy = 0;
+            if (this.cursors.up.isDown || this.wasd.up.isDown) dy = -1;
+            else if (this.cursors.down.isDown || this.wasd.down.isDown) dy = 1;
+            if (this.cursors.left.isDown || this.wasd.left.isDown) dx = -1;
+            else if (this.cursors.right.isDown || this.wasd.right.isDown) dx = 1;
+            if (dx !== 0 || dy !== 0) { this.tryMove(dx, dy); this.moveDelay = 200; }
+        }
+        this.updateUI();
+    }
+    tryMove(dx, dy) {
+        const newX = this.playerX + dx, newY = this.playerY + dy;
+        if (newX < 0 || newX >= this.mapWidth || newY < 0 || newY >= this.mapHeight) return;
+        const s = gameState.getEffectiveStats();
+        const cost = s.explorationCost;
+        const isNew = !this.explored[newY][newX];
+        if (isNew && gameState.player.stamina < cost) { this.showMessage('体力不足，无法探索新区域！'); return; }
+        if (isNew) { gameState.player.stamina -= cost; gameState.gameStats.tilesExplored++; }
+        const entity = this.entityMap[newY][newX];
+        if (entity) { this.handleEntity(entity); return; }
+        this.moveTo(newX, newY);
+    }
+    moveTo(x, y) {
+        this.playerX = x; this.playerY = y;
+        gameState.player.x = x; gameState.player.y = y;
+        this.isMoving = true;
+        this.tweens.add({ targets: this.player, x: x * this.tileSize + this.tileSize / 2, y: y * this.tileSize + this.tileSize / 2, duration: 150, ease: 'Power2', onComplete: () => { this.isMoving = false; this.revealArea(x, y); } });
+    }
+    revealArea(cx, cy) {
+        const s = gameState.getEffectiveStats();
+        const radius = gameConfig.exploration.revealRadius + (s.visionBonus || 0);
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const x = cx + dx, y = cy + dy;
+                if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight) continue;
+                if (Math.sqrt(dx * dx + dy * dy) <= radius) {
+                    this.revealed[y][x] = true; this.explored[y][x] = true;
+                    const idx = y * this.mapWidth + x;
+                    if (this.tileImages[idx]) this.tileImages[idx].setVisible(true);
+                    this.fogTiles.forEach(f => { if (f.x === x && f.y === y) this.tweens.add({ targets: f.tile, alpha: 0, duration: 300 }); });
+                }
+            }
+        }
+        this.entities.forEach(e => { if (this.revealed[e.y] && this.revealed[e.y][e.x]) e.sprite.setVisible(true); });
+    }
+    handleEntity(entity) {
+        switch (entity.type) {
+            case 'monster': this.scene.launch('BattleScene', { monster: entity }); this.scene.pause(); break;
+            case 'chest': this.openChest(entity); break;
+            case 'item': this.pickupItem(entity); break;
+            case 'supply': this.useSupply(entity); break;
+            case 'temple': this.scene.launch('TempleScene', { god: entity }); this.scene.pause(); break;
+        }
+    }
+    openChest(entity) {
+        const loot = entity.data.loot;
+        const gold = rand(loot.gold[0], loot.gold[1]);
+        gameState.player.gold += gold;
+        gameState.player.incense += rand(1, 3);
+        if (loot.items && loot.items.length > 0 && Math.random() > 0.5) { const itemName = choose(loot.items); gameState.addItem({ id: itemName, name: itemName, type: 'item' }); this.showMessage(`获得: ${itemName} 和 ${gold} 金币`); }
+        else this.showMessage(`获得 ${gold} 金币和香火`);
+        this.removeEntity(entity);
+        gameState.gameStats.chestsOpened++;
+    }
+    pickupItem(entity) { if (gameState.addItem(entity.data)) { this.showMessage(`获得: ${entity.data.name}`); this.removeEntity(entity); } else this.showMessage('背包已满！'); }
+    useSupply(entity) { const d = entity.data; gameState.player.health = Math.min(gameState.player.maxHealth, gameState.player.health + d.heal); gameState.player.stamina = Math.min(gameState.player.maxStamina, gameState.player.stamina + d.restoreStamina); this.showMessage(`恢复生命: ${d.heal}，体力: ${d.restoreStamina}`); this.removeEntity(entity); }
+    removeEntity(entity) { entity.sprite.destroy(); this.entityMap[entity.y][entity.x] = null; const idx = this.entities.indexOf(entity); if (idx !== -1) this.entities.splice(idx, 1); }
+    interact() {
+        const adj = [{ x: this.playerX, y: this.playerY - 1 }, { x: this.playerX, y: this.playerY + 1 }, { x: this.playerX - 1, y: this.playerY }, { x: this.playerX + 1, y: this.playerY }];
+        for (const p of adj) { if (p.x >= 0 && p.x < this.mapWidth && p.y >= 0 && p.y < this.mapHeight) { const e = this.entityMap[p.y][p.x]; if (e) { this.handleEntity(e); return; } } }
+    }
+    showMessage(text) { const msg = this.add.text(this.cameras.main.width / 2, this.cameras.main.height - 100, text, { fontSize: '18px', fill: '#ffd700', backgroundColor: 'rgba(0,0,0,0.8)', padding: { x: 20, y: 10 } }); msg.setOrigin(0.5); msg.setDepth(200); this.tweens.add({ targets: msg, alpha: 0, delay: 2000, duration: 500, onComplete: () => msg.destroy() }); }
+    resumeBattle(entity, victory) { if (victory) this.removeEntity(entity); }
+    resumeTemple(entity, worshipped) { if (worshipped) this.removeEntity(entity); }
+}
+
+class BattleScene extends Phaser.Scene {
+    constructor() { super({ key: 'BattleScene' }); }
+    init(data) { this.monsterEntity = data.monster; this.monsterData = data.monster.data; }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.rectangle(0, 0, w, h, 0x1a1a2e).setOrigin(0);
+        this.add.text(w / 2, 50, '战斗', { fontSize: '32px', fill: '#ff4444', fontStyle: 'bold' }).setOrigin(0.5);
+        this.createPlayerPanel();
+        this.createMonsterPanel();
+        this.createActionButtons();
+        this.createBattleLog();
+        this.battleActive = true;
+        this.playerTurn = true;
+    }
+    createPlayerPanel() {
+        const panel = this.add.container(150, 150);
+        panel.add(this.add.rectangle(0, 0, 250, 180, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        this.pHealthText = this.add.text(-100, -30, '', { fontSize: '14px', fill: '#ff6666' }).setOrigin(0);
+        panel.add(this.pHealthText);
+        this.pStaminaText = this.add.text(-100, 0, '', { fontSize: '14px', fill: '#66ccff' }).setOrigin(0);
+        panel.add(this.pStaminaText);
+        this.pAttackText = this.add.text(-100, 30, '', { fontSize: '14px', fill: '#ffaa44' }).setOrigin(0);
+        panel.add(this.pAttackText);
+        this.pDefenseText = this.add.text(-100, 60, '', { fontSize: '14px', fill: '#44ff44' }).setOrigin(0);
+        panel.add(this.pDefenseText);
+        this.updatePlayerStats();
+    }
+    createMonsterPanel() {
+        const w = this.cameras.main.width;
+        const panel = this.add.container(w - 150, 150);
+        panel.add(this.add.rectangle(0, 0, 250, 180, 0x2a2a3a).setStrokeStyle(2, 0x6a4a4a));
+        this.add.text(-100, -70, this.monsterData.name, { fontSize: '20px', fill: '#ff4444' }).setOrigin(0).setParent(panel);
+        const floor = gameState.gameStats.currentFloor;
+        const ml = 1 + (floor - 1) * 0.2;
+        this.mMaxHealth = Math.floor(this.monsterData.baseHealth * ml);
+        this.mHealth = this.mMaxHealth;
+        this.mAttack = Math.floor(this.monsterData.baseAttack * ml);
+        this.mDefense = Math.floor(this.monsterData.baseDefense * ml);
+        this.mHealthText = this.add.text(-100, -30, '', { fontSize: '14px', fill: '#ff6666' }).setOrigin(0);
+        panel.add(this.mHealthText);
+        this.mAttackText = this.add.text(-100, 0, `攻击: ${this.mAttack}`, { fontSize: '14px', fill: '#ffaa44' }).setOrigin(0);
+        panel.add(this.mAttackText);
+        this.mDefenseText = this.add.text(-100, 30, `防御: ${this.mDefense}`, { fontSize: '14px', fill: '#44ff44' }).setOrigin(0);
+        panel.add(this.mDefenseText);
+        this.updateMonsterStats();
+    }
+    createActionButtons() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        const y = h - 150;
+        this.attackBtn = this.add.text(w / 2 - 180, y, '攻击', { fontSize: '20px', fill: '#ffffff', backgroundColor: '#8b4513', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        this.skillBtn = this.add.text(w / 2 - 60, y, '技能', { fontSize: '20px', fill: '#ffffff', backgroundColor: '#4a6a8a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        this.itemBtn = this.add.text(w / 2 + 60, y, '物品', { fontSize: '20px', fill: '#ffffff', backgroundColor: '#4a8a4a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        this.fleeBtn = this.add.text(w / 2 + 180, y, '逃跑', { fontSize: '20px', fill: '#ffffff', backgroundColor: '#6a4a4a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        this.attackBtn.on('pointerdown', () => this.playerAttack());
+        this.skillBtn.on('pointerdown', () => this.playerSkill());
+        this.itemBtn.on('pointerdown', () => this.openItemMenu());
+        this.fleeBtn.on('pointerdown', () => this.tryFlee());
+        [this.attackBtn, this.skillBtn, this.itemBtn, this.fleeBtn].forEach(btn => { btn.on('pointerover', () => btn.setStyle({ fill: '#ffd700' })); btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' })); });
+    }
+    createBattleLog() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        const panel = this.add.container(w / 2, h - 250);
+        panel.add(this.add.rectangle(0, 0, 500, 100, 0x1a1a2a).setStrokeStyle(2, 0x3a3a5a));
+        this.logTexts = [];
+        for (let i = 0; i < 4; i++) { const t = this.add.text(-240, -35 + i * 20, '', { fontSize: '14px', fill: '#aaaaaa' }).setOrigin(0); this.logTexts.push(t); panel.add(t); }
+    }
+    addLog(msg, color = '#aaaaaa') { this.battleLog = this.battleLog || []; this.battleLog.push({ msg, color }); if (this.battleLog.length > 4) this.battleLog.shift(); this.logTexts.forEach((t, i) => { if (this.battleLog[i]) { t.setText(this.battleLog[i].msg); t.setStyle({ fill: this.battleLog[i].color }); } else t.setText(''); }); }
+    updatePlayerStats() { const s = gameState.getEffectiveStats(); this.pHealthText.setText(`生命: ${Math.floor(gameState.player.health)}/${Math.floor(s.health)}`); this.pStaminaText.setText(`体力: ${Math.floor(gameState.player.stamina)}/${Math.floor(s.stamina)}`); this.pAttackText.setText(`攻击: ${Math.floor(s.attack)}`); this.pDefenseText.setText(`防御: ${Math.floor(s.defense)}`); }
+    updateMonsterStats() { this.mHealthText.setText(`生命: ${this.mHealth}/${this.mMaxHealth}`); }
+    playerAttack() {
+        if (!this.battleActive || !this.playerTurn) return;
+        const s = gameState.getEffectiveStats();
+        let dmg = Math.max(1, s.attack - this.mDefense);
+        if (Math.random() < s.critChance) { dmg = Math.floor(dmg * s.critDamage); this.addLog('暴击！', '#ffd700'); }
+        this.mHealth = Math.max(0, this.mHealth - dmg);
+        this.updateMonsterStats();
+        this.addLog(`对${this.monsterData.name}造成 ${dmg} 点伤害`, '#66ff66');
+        if (this.mHealth <= 0) this.battleVictory();
+        else { this.playerTurn = false; this.time.delayedCall(1000, this.monsterTurn, [], this); }
+    }
+    playerSkill() {
+        if (!this.battleActive || !this.playerTurn) return;
+        const s = gameState.getEffectiveStats();
+        if (gameState.player.stamina < 15) { this.addLog('体力不足！', '#ff4444'); return; }
+        gameState.player.stamina -= 15;
+        let dmg = Math.max(1, Math.floor(s.attack * 1.5) - this.mDefense);
+        if (gameState.hasBlessing('烈焰加持')) dmg += 5;
+        this.mHealth = Math.max(0, this.mHealth - dmg);
+        this.updateMonsterStats();
+        this.addLog(`强力攻击！造成 ${dmg} 点伤害！`, '#ffaa00');
+        if (this.mHealth <= 0) this.battleVictory();
+        else { this.playerTurn = false; this.time.delayedCall(1000, this.monsterTurn, [], this); }
+    }
+    openItemMenu() { const consumables = gameState.inventory.filter(i => i.type === 'consumable'); if (consumables.length === 0) { this.addLog('没有可用的物品！', '#ff4444'); return; } if (gameState.useConsumable(consumables[0])) { this.addLog(`使用了 ${consumables[0].name}`, '#66ccff'); this.updatePlayerStats(); this.playerTurn = false; this.time.delayedCall(1000, this.monsterTurn, [], this); } }
+    tryFlee() { if (!this.battleActive || !this.playerTurn) return; if (Math.random() < 0.3) { this.addLog('成功逃跑！', '#66ccff'); this.battleActive = false; this.time.delayedCall(1500, () => this.exitBattle(false), [], this); } else { this.addLog('逃跑失败！', '#ff4444'); this.playerTurn = false; this.time.delayedCall(1000, this.monsterTurn, [], this); } }
+    monsterTurn() {
+        if (!this.battleActive) return;
+        const s = gameState.getEffectiveStats();
+        let dmg = Math.max(1, this.mAttack - s.defense);
+        if (gameState.hasBlessing('水神护体') && Math.random() < 0.2) { dmg = Math.floor(dmg * 0.5); this.addLog('水神护体！伤害减免50%！', '#66ccff'); }
+        let healthAfter = gameState.player.health - dmg;
+        if (gameState.hasBlessing('女娲护佑') && healthAfter <= 0 && !this.usedSurvival) { healthAfter = 1; this.usedSurvival = true; this.addLog('女娲护佑！保留1点生命！', '#ff69b4'); }
+        gameState.player.health = Math.max(0, healthAfter);
+        this.updatePlayerStats();
+        this.addLog(`${this.monsterData.name}造成 ${dmg} 点伤害`, '#ff6666');
+        if (gameState.player.health <= 0) this.battleDefeat();
+        else this.playerTurn = true;
+    }
+    battleVictory() { this.battleActive = false; const exp = this.monsterData.expReward; gameState.addExperience(exp); this.addLog(`胜利！获得 ${exp} 经验`, '#ffd700'); const gold = rand(5, 15) * gameState.gameStats.currentFloor; gameState.player.gold += gold; this.addLog(`获得 ${gold} 金币`, '#ffd700'); gameState.player.incense += rand(1, 3); gameState.gameStats.monstersKilled++; this.time.delayedCall(2500, () => this.exitBattle(true), [], this); }
+    battleDefeat() { this.battleActive = false; this.addLog('战斗失败...', '#ff0000'); this.time.delayedCall(2000, () => { gameState.reset(); this.scene.start('TitleScene'); }, [], this); }
+    exitBattle(victory) { const gs = this.scene.get('GameScene'); if (gs && gs.resumeBattle) gs.resumeBattle(this.monsterEntity, victory); this.scene.resume('GameScene'); this.scene.stop(); }
+}
+
+class TempleScene extends Phaser.Scene {
+    constructor() { super({ key: 'TempleScene' }); }
+    init(data) { this.godEntity = data.god; this.god = data.god.data; }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.rectangle(0, 0, w, h, 0x2a1a1a).setOrigin(0);
+        this.add.text(w / 2, 50, '神庙', { fontSize: '36px', fill: '#ffd700', fontStyle: 'bold' }).setOrigin(0.5);
+        const panel = this.add.container(w / 2, 200);
+        panel.add(this.add.rectangle(0, 0, 400, 200, 0x3a2a2a).setStrokeStyle(3, 0x8b4513));
+        this.add.text(-180, -80, `${this.god.name} - ${this.god.title}`, { fontSize: '24px', fill: '#ffd700' }).setOrigin(0).setParent(panel);
+        this.add.text(-180, -40, `出处: ${this.god.origin}`, { fontSize: '14px', fill: '#888888' }).setOrigin(0).setParent(panel);
+        this.add.text(-180, -10, this.god.description, { fontSize: '14px', fill: '#cccccc', wordWrap: { width: 360 } }).setOrigin(0).setParent(panel);
+        this.add.text(-180, 60, `祝福: ${this.god.blessing.name}`, { fontSize: '16px', fill: '#66ff66' }).setOrigin(0).setParent(panel);
+        this.add.text(-180, 90, this.god.blessing.description, { fontSize: '14px', fill: '#88ff88' }).setOrigin(0).setParent(panel);
+        const cost = this.god.offeringBase;
+        const hasEnough = gameState.player.incense >= cost;
+        const isUnlocked = gameState.unlockedGods.includes(this.god.id);
+        const hasBlessing = gameState.activeBlessings.some(b => b.name === this.god.blessing.name);
+        this.incenseText = this.add.text(w / 2, h - 250, `当前香火: ${gameState.player.incense}`, { fontSize: '20px', fill: '#ffd700' }).setOrigin(0.5);
+        this.offerBtn = this.add.text(w / 2 - 150, h - 180, `供奉 (${cost}香火)`, { fontSize: '20px', fill: hasEnough ? '#ffffff' : '#666666', backgroundColor: hasEnough ? '#8b4513' : '#4a4a4a', padding: { x: 20, y: 10 } }).setOrigin(0.5);
+        if (hasEnough) this.offerBtn.setInteractive();
+        this.worshipBtn = this.add.text(w / 2 + 150, h - 180, hasBlessing ? '已获得祝福' : '祈愿 (已供奉)', { fontSize: '20px', fill: isUnlocked ? '#ffffff' : '#666666', backgroundColor: isUnlocked ? '#4a6a4a' : '#4a4a4a', padding: { x: 20, y: 10 } }).setOrigin(0.5);
+        if (isUnlocked && !hasBlessing) this.worshipBtn.setInteractive();
+        const leaveBtn = this.add.text(w / 2, h - 100, '离开神庙', { fontSize: '20px', fill: '#ffffff', backgroundColor: '#4a4a6a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive();
+        this.offerBtn.on('pointerdown', () => this.performOffering(cost));
+        this.worshipBtn.on('pointerdown', () => this.performWorship());
+        leaveBtn.on('pointerdown', () => this.leaveTemple(false));
+    }
+    performOffering(cost) { gameState.player.incense -= cost; this.incenseText.setText(`当前香火: ${gameState.player.incense}`); if (!gameState.unlockedGods.includes(this.god.id)) gameState.unlockGod(this.god.id); this.showMessage(`成功供奉${this.god.name}！解锁神明图鉴。`); this.offerBtn.setStyle({ fill: '#666666', backgroundColor: '#4a4a4a' }).disableInteractive(); this.worshipBtn.setStyle({ fill: '#ffffff', backgroundColor: '#4a6a4a' }).setInteractive(); }
+    performWorship() { gameState.activateBlessing(this.god.blessing); gameState.gameStats.godsWorshipped++; this.showMessage(`获得祝福: ${this.god.blessing.name}！`); this.worshipBtn.setStyle({ fill: '#666666', backgroundColor: '#4a4a4a' }).disableInteractive().setText('已获得祝福'); this.time.delayedCall(2000, () => this.leaveTemple(true), [], this); }
+    showMessage(text) { const msg = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 + 50, text, { fontSize: '18px', fill: '#ffd700', backgroundColor: 'rgba(0,0,0,0.8)', padding: { x: 20, y: 10 } }); msg.setOrigin(0.5); this.tweens.add({ targets: msg, alpha: 0, delay: 2000, duration: 500, onComplete: () => msg.destroy() }); }
+    leaveTemple(worshipped) { const gs = this.scene.get('GameScene'); if (gs && gs.resumeTemple) gs.resumeTemple(this.godEntity, worshipped); this.scene.resume('GameScene'); this.scene.stop(); }
+}
+
+class InventoryScene extends Phaser.Scene {
+    constructor() { super({ key: 'InventoryScene' }); }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.rectangle(0, 0, w, h, 0x1a1a2e, 0.95).setOrigin(0);
+        this.add.text(w / 2, 50, '物品栏', { fontSize: '32px', fill: '#ffd700', fontStyle: 'bold' }).setOrigin(0.5);
+        this.createInventoryGrid();
+        this.createEquipmentPanel();
+        this.createCloseButton();
+        this.input.keyboard.once('keydown-ESC', () => this.close());
+        this.input.keyboard.once('keydown-I', () => this.close());
+    }
+    createInventoryGrid() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        const grid = this.add.container(w / 2, h / 2 + 50);
+        grid.add(this.add.rectangle(0, 0, 420, 240, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        const cols = 5, rows = 4, size = 70, gap = 10;
+        const sx = -((cols * size + (cols - 1) * gap) / 2);
+        const sy = -((rows * size + (rows - 1) * gap) / 2);
+        this.slots = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const idx = r * cols + c;
+                const x = sx + c * (size + gap), y = sy + r * (size + gap);
+                const slot = this.add.container(x, y);
+                const bg = this.add.rectangle(0, 0, size, size, 0x1a1a2a).setStrokeStyle(2, 0x4a4a6a);
+                slot.add(bg);
+                if (gameState.inventory[idx]) {
+                    const item = gameState.inventory[idx];
+                    const colors = { common: '#aaaaaa', uncommon: '#66ff66', rare: '#6666ff', epic: '#ff66ff', legendary: '#ffd700' };
+                    const t = this.add.text(0, -10, item.name.substring(0, 4), { fontSize: '11px', fill: colors[item.rarity] || '#aaa', wordWrap: { width: 60 } }).setOrigin(0.5);
+                    slot.add(t);
+                    const t2 = this.add.text(0, 15, item.type === 'weapon' ? '武器' : item.type === 'armor' ? '护甲' : item.type === 'consumable' ? '消耗' : '材料', { fontSize: '10px', fill: '#888' }).setOrigin(0.5);
+                    slot.add(t2);
+                    slot.setInteractive(new Phaser.Geom.Rectangle(-size / 2, -size / 2, size, size), Phaser.Geom.Rectangle.Contains);
+                    slot.on('pointerdown', () => this.selectItem(idx));
+                }
+                grid.add(slot);
+                this.slots.push({ container: slot, bg, item: gameState.inventory[idx] });
+            }
+        }
+        this.detailsPanel = this.add.container(w - 180, h / 2);
+        this.detailsPanel.add(this.add.rectangle(0, 0, 220, 280, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        this.detailTitle = this.add.text(-100, -130, '物品详情', { fontSize: '16px', fill: '#ffd700' }).setOrigin(0);
+        this.detailsPanel.add(this.detailTitle);
+        this.detailName = this.add.text(-100, -100, '', { fontSize: '18px', fill: '#fff' }).setOrigin(0);
+        this.detailsPanel.add(this.detailName);
+        this.detailDesc = this.add.text(-100, -60, '', { fontSize: '12px', fill: '#aaa', wordWrap: { width: 180 } }).setOrigin(0);
+        this.detailsPanel.add(this.detailDesc);
+        this.detailStats = this.add.text(-100, 30, '', { fontSize: '12px', fill: '#6f6', wordWrap: { width: 180 } }).setOrigin(0);
+        this.detailsPanel.add(this.detailStats);
+        this.useBtn = this.add.text(-50, 110, '使用/装备', { fontSize: '14px', fill: '#fff', backgroundColor: '#4a6a4a', padding: { x: 15, y: 8 } }).setOrigin(0.5).setVisible(false);
+        this.detailsPanel.add(this.useBtn);
+        this.dropBtn = this.add.text(50, 110, '丢弃', { fontSize: '14px', fill: '#fff', backgroundColor: '#6a4a4a', padding: { x: 15, y: 8 } }).setOrigin(0.5).setVisible(false);
+        this.detailsPanel.add(this.dropBtn);
+        this.useBtn.on('pointerdown', () => this.useSelected());
+        this.dropBtn.on('pointerdown', () => this.dropSelected());
+    }
+    createEquipmentPanel() {
+        const panel = this.add.container(120, 200);
+        panel.add(this.add.rectangle(0, 0, 180, 120, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        this.add.text(-80, -50, '装备', { fontSize: '18px', fill: '#ffd700' }).setOrigin(0).setParent(panel);
+        const wSlot = this.add.rectangle(-40, 0, 50, 50, 0x1a1a2a).setStrokeStyle(2, 0x4a4a6a);
+        panel.add(wSlot);
+        this.add.text(-40, 35, '武器', { fontSize: '12px', fill: '#888' }).setOrigin(0.5).setParent(panel);
+        const aSlot = this.add.rectangle(40, 0, 50, 50, 0x1a1a2a).setStrokeStyle(2, 0x4a4a6a);
+        panel.add(aSlot);
+        this.add.text(40, 35, '护甲', { fontSize: '12px', fill: '#888' }).setOrigin(0.5).setParent(panel);
+        if (gameState.equipment.weapon) { const t = this.add.text(-40, 0, gameState.equipment.weapon.name.substring(0, 3), { fontSize: '11px', fill: '#6f6' }).setOrigin(0.5); panel.add(t); }
+        if (gameState.equipment.armor) { const t = this.add.text(40, 0, gameState.equipment.armor.name.substring(0, 3), { fontSize: '11px', fill: '#6f6' }).setOrigin(0.5); panel.add(t); }
+    }
+    createCloseButton() { const btn = this.add.text(this.cameras.main.width / 2, this.cameras.main.height - 80, '关闭 (ESC/I)', { fontSize: '18px', fill: '#fff', backgroundColor: '#4a4a6a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive(); btn.on('pointerdown', () => this.close()); }
+    selectItem(idx) {
+        this.selected = idx;
+        const item = gameState.inventory[idx];
+        if (!item) return;
+        const colors = { common: '#aaaaaa', uncommon: '#66ff66', rare: '#6666ff', epic: '#ff66ff', legendary: '#ffd700' };
+        this.detailName.setText(item.name).setStyle({ fill: colors[item.rarity] || '#fff' });
+        this.detailDesc.setText(item.description || '');
+        let stats = '';
+        if (item.stats) { if (item.stats.attack) stats += `攻击: +${item.stats.attack}\n`; if (item.stats.defense) stats += `防御: +${item.stats.defense}\n`; if (item.stats.health) stats += `生命: +${item.stats.health}\n`; }
+        if (item.effect) { if (item.effect.heal) stats += `恢复: ${item.effect.heal}\n`; if (item.effect.restoreStamina) stats += `体力: ${item.effect.restoreStamina}\n`; }
+        this.detailStats.setText(stats);
+        this.useBtn.setVisible(true).setText(item.type === 'weapon' || item.type === 'armor' ? '装备' : item.type === 'consumable' ? '使用' : '');
+        if (this.useBtn.text === '') this.useBtn.setVisible(false);
+        this.dropBtn.setVisible(true);
+    }
+    useSelected() { if (this.selected === undefined) return; const item = gameState.inventory[this.selected]; if (!item) return; if (item.type === 'weapon' || item.type === 'armor') gameState.equipItem(item); else if (item.type === 'consumable') gameState.useConsumable(item); this.scene.restart(); }
+    dropSelected() { if (this.selected === undefined) return; const item = gameState.inventory[this.selected]; if (item) gameState.removeItem(item.id); this.selected = undefined; this.scene.restart(); }
+    close() { this.scene.resume('GameScene'); this.scene.stop(); }
+}
+
+class GodsScene extends Phaser.Scene {
+    constructor() { super({ key: 'GodsScene' }); }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.rectangle(0, 0, w, h, 0x1a1a2e, 0.95).setOrigin(0);
+        this.add.text(w / 2, 50, '神明图鉴', { fontSize: '32px', fill: '#ffd700', fontStyle: 'bold' }).setOrigin(0.5);
+        this.createGodList();
+        this.createDetailsPanel();
+        this.createCloseButton();
+        this.input.keyboard.once('keydown-ESC', () => this.close());
+        this.input.keyboard.once('keydown-G', () => this.close());
+    }
+    createGodList() {
+        const list = this.add.container(this.cameras.main.width / 4, this.cameras.main.height / 2 + 50);
+        list.add(this.add.rectangle(0, 0, 280, 400, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        const sy = -180;
+        gods.forEach((god, i) => {
+            const y = sy + i * 52;
+            const unlocked = gameState.unlockedGods.includes(god.id);
+            const hasBlessing = gameState.activeBlessings.some(b => b.name === god.blessing.name);
+            const btn = this.add.container(0, y);
+            btn.add(this.add.rectangle(0, 0, 260, 44, unlocked ? 0x3a3a4a : 0x1a1a2a).setStrokeStyle(2, unlocked ? 0x6a6a8a : 0x3a3a4a));
+            btn.add(this.add.text(-120, 0, unlocked ? god.name : '???', { fontSize: '16px', fill: unlocked ? (hasBlessing ? '#6f6' : '#fff') : '#666' }).setOrigin(0, 0.5));
+            if (hasBlessing) btn.add(this.add.text(110, 0, '✓', { fontSize: '20px', fill: '#6f6' }).setOrigin(1, 0.5));
+            btn.setInteractive(new Phaser.Geom.Rectangle(-130, -22, 260, 44), Phaser.Geom.Rectangle.Contains);
+            btn.on('pointerdown', () => this.selectGod(god));
+            list.add(btn);
+        });
+    }
+    createDetailsPanel() {
+        const panel = this.add.container(this.cameras.main.width - 180, this.cameras.main.height / 2);
+        panel.add(this.add.rectangle(0, 0, 280, 400, 0x2a2a3a).setStrokeStyle(2, 0x4a4a6a));
+        this.gName = this.add.text(-130, -180, '', { fontSize: '24px', fill: '#ffd700' }).setOrigin(0);
+        panel.add(this.gName);
+        this.gTitle = this.add.text(-130, -140, '', { fontSize: '14px', fill: '#888' }).setOrigin(0);
+        panel.add(this.gTitle);
+        this.gOrigin = this.add.text(-130, -110, '', { fontSize: '12px', fill: '#666' }).setOrigin(0);
+        panel.add(this.gOrigin);
+        this.gDesc = this.add.text(-130, -80, '', { fontSize: '12px', fill: '#aaa', wordWrap: { width: 260 } }).setOrigin(0);
+        panel.add(this.gDesc);
+        this.gBlessingName = this.add.text(-130, 60, '祝福能力:', { fontSize: '14px', fill: '#ffd700' }).setOrigin(0);
+        panel.add(this.gBlessingName);
+        this.gBlessingDesc = this.add.text(-130, 90, '', { fontSize: '14px', fill: '#6f6', wordWrap: { width: 260 } }).setOrigin(0);
+        panel.add(this.gBlessingDesc);
+        this.gOfferInfo = this.add.text(-130, 150, '', { fontSize: '12px', fill: '#fa4' }).setOrigin(0);
+        panel.add(this.gOfferInfo);
+    }
+    createCloseButton() { const btn = this.add.text(this.cameras.main.width / 2, this.cameras.main.height - 80, '关闭 (ESC/G)', { fontSize: '18px', fill: '#fff', backgroundColor: '#4a4a6a', padding: { x: 20, y: 10 } }).setOrigin(0.5).setInteractive(); btn.on('pointerdown', () => this.close()); }
+    selectGod(god) {
+        const unlocked = gameState.unlockedGods.includes(god.id);
+        const hasBlessing = gameState.activeBlessings.some(b => b.name === god.blessing.name);
+        if (unlocked) { this.gName.setText(god.name); this.gTitle.setText(god.title); this.gOrigin.setText(`出处: ${god.origin}`); this.gDesc.setText(god.description); this.gBlessingName.setText(god.blessing.name); this.gBlessingDesc.setText(god.blessing.description); if (hasBlessing) this.gOfferInfo.setText('✓ 已获得祝福').setStyle({ fill: '#6f6' }); else this.gOfferInfo.setText(`供奉需要: ${god.offeringBase} 香火`).setStyle({ fill: '#fa4' }); }
+        else { this.gName.setText('???').setStyle({ fill: '#666' }); this.gTitle.setText('未解锁'); this.gOrigin.setText(''); this.gDesc.setText('在游戏中探索神庙来解锁这位神明'); this.gBlessingName.setText('???'); this.gBlessingDesc.setText(''); this.gOfferInfo.setText(''); }
+    }
+    close() { this.scene.resume('GameScene'); this.scene.stop(); }
+}
+
+const config = { type: Phaser.AUTO, width: gameConfig.width, height: gameConfig.height, parent: 'game-container', backgroundColor: '#1a1a2e', physics: { default: 'arcade', arcade: { gravity: { y: 0 } } }, scene: [TitleScene, GameScene, BattleScene, TempleScene, InventoryScene, GodsScene] };
+const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
